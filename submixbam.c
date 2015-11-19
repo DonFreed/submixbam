@@ -14,7 +14,7 @@
 void *bed_read(const char *fn);
 int bed_overlap(const void *_h, const char *chr, int beg, int end);
 void bed_destroy(void *_h);
-
+uint64_t bed_get_reg(const void *_h, const char *chr, int beg, int end);
 
 void usage(FILE *fp)
 {
@@ -36,19 +36,36 @@ void usage(FILE *fp)
 "  -c INT       compression level for the output file [0]\n");
 }
 
+/*
+ * Read a sam/bam file with downsampling
+ */
+inline uint64_t sam_downsample_next(samFile *fp, hts_itr_t *iter, bam1_t *b, float down)
+{
+    uint64_t ret;
+    do {
+        if (sam_itr_next(fp, iter, b) >= 0) {
+            ret = ((uint64_t)b->core.tid<<32) | (uint32_t)((uint32_t)b->core.pos+1)<<1 | bam_is_rev(b);
+        } else {
+            ret = IS_EMPTY;
+            break;
+        }
+    } while (drand48() > down);
+    return ret;
+}
+
 int main(int argc, char *argv[])
 {
     int c, compression = 0;
     char *fn_in1 = 0, *fn_in2 = 0, *fn_bed, *fn_out = 0, *fn_hdr = 0, mode[16];
     long random_seed = (long)time(NULL);
-    float min_frac = 0.0, max_frac = 1.0, down1 = 1.0, down2 = 1.0, diff_frac, fraction;
+    float min_frac = 0.0, max_frac = 1.0, down1 = 1.0, down2 = 1.0, diff_frac, fraction = 0.0;
     void *bed = 0;
     samFile *fp_out = 0, *fp_in1 = 0, *fp_in2 = 0;
     bam_hdr_t *hdr = 0, *hout = 0;
     hts_idx_t *idx = 0;
     hts_itr_t *iter1 = 0, *iter2 = 0;
     bam1_t *b1 = 0, *b2 = 0;
-    uint64_t pos1 = 0, pos2 = 0;
+    uint64_t pos1 = 0, pos2 = 0, reg = 0, last_reg = 0;
 
     while ((c = getopt(argc, argv, "h:o:m:a:s:d:e:c:")) >= 0) {
         if (c == 'h') fn_hdr = strdup(optarg);
@@ -192,53 +209,59 @@ int main(int argc, char *argv[])
     }
     // Merge data //
     fprintf(stderr, "5\n");
-    diff_frac = max_frac - min_frac;
-    fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
+    diff_frac = max_frac - min_frac
+    //fraction = (float)(drand48() * diff_frac + min_frac); // fraction of reads from bam1
     while (pos1 != IS_EMPTY || pos2 != IS_EMPTY) {
         if (drand48() > fraction) { // draw from bam2
+            reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
+            if (reg != last_reg) {
+                // Move to a new region //
+                while (reg == UINT64_MAX) {
+                    if ((pos2 = sam_downsample_next(fp_in2, iter2, b2, down2)) == IS_EMPTY) break;
+                    reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
+                }
+                last_reg = reg;
+                // update bam1 //
+                reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
+                while (pos1 < pos2 && reg != last_reg) {
+                    if ((pos1 = sam_downsample_next(fp_in1, iter1, b1, down1)) == IS_EMPTY) break;
+                    reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
+                }
+                fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
+                continue // draw again for new region
+            }
             sam_write1(fp_out, hout, b2);
-            // move bam1 if necessary
+            // move bam1, if necessary
             while (pos1 < pos2) {
-                do {
-                    if (sam_itr_next(fp_in1, iter1, b1) >= 0) {
-                        pos1 = ((uint64_t)b1->core.tid<<32) | (uint32_t)((uint32_t)b1->core.pos+1)<<1 | bam_is_rev(b1);
-                    } else {
-                        pos1 = IS_EMPTY;
-                        break;
-                    }
-                } while (drand48() > down1);
+                pos1 = sam_downsample_next(fp_in1, iter1, b1, down1);
             }
             // move bam2
-            do {
-                if (sam_itr_next(fp_in2, iter2, b2) >= 0) {
-                    pos2 = ((uint64_t)b2->core.tid<<32) | (uint32_t)((uint32_t)b2->core.pos+1)<<1 | bam_is_rev(b2);
-                } else {
-                    pos2 = IS_EMPTY;
-                    break;
-                }
-            } while (drand48() > down2);
+            pos2 = sam_downsample_next(fp_in2, iter2, b2, down2);
         } else { // draw from bam1
+            reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
+            if (reg != last_reg) {
+                // Move to a new region //
+                while (reg == UINT64_MAX) {
+                    if ((pos1 = sam_downsample_next(fp_in1, iter1, b1, down1)) == IS_EMPTY) break;
+                    reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
+                }
+                last_reg = reg;
+                // update bam2 //
+                reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
+                while (pos2 < pos1 && reg != last_reg) {
+                    if ((pos2 = sam_downsample_next(fp_in2, iter2, b2, down2)) == IS_EMPTY) break;
+                    reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
+                }
+                fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
+                continue // draw again for new region
+            }
             sam_write1(fp_out, hout, b1);
-            // move bam2 if necessary
+            // move bam2, if necessary
             while (pos2 < pos1) {
-                do {
-                    if (sam_itr_next(fp_in2, iter1, b2) >= 0) {
-                        pos2 = ((uint64_t)b2->core.tid<<32) | (uint32_t)((uint32_t)b2->core.pos+1)<<1 | bam_is_rev(b2);
-                    } else {
-                        pos2 = IS_EMPTY;
-                        break;
-                    }
-                } while (drand48() > down2);
+                pos2 = sam_downsample_next(fp_in2, iter2, b2, down2);
             }
             // move bam1
-            do {
-                if (sam_itr_next(fp_in1, iter1, b1) >= 0) {
-                    pos1 = ((uint64_t)b1->core.tid<<32) | (uint32_t)((uint32_t)b1->core.pos+1)<<1 | bam_is_rev(b1);
-                } else {
-                    pos1 = IS_EMPTY;
-                    break;
-                }
-            } while (drand48() > down1);
+            pos1 = sam_downsample_next(fp_in1, iter1, b1, down1);
         }
     }
 
