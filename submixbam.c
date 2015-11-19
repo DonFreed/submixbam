@@ -195,18 +195,24 @@ int main(int argc, char *argv[])
     while (pos1 != IS_EMPTY || pos2 != IS_EMPTY) {
         if (pos2 < pos1) {
             sam_write1(fp_out, hout, b2);
-            if (sam_itr_next(fp_in2, iter2, b2) >= 0) {
-                pos2 = ((uint64_t)b2->core.tid<<32) | (uint32_t)((uint32_t)b2->core.pos+1)<<1 | bam_is_rev(b2);
-            } else {
-                pos2 = IS_EMPTY;
-            }
+			do {
+				if (sam_itr_next(fp_in2, iter2, b2) >= 0) {
+					pos2 = ((uint64_t)b2->core.tid<<32) | (uint32_t)((uint32_t)b2->core.pos+1)<<1 | bam_is_rev(b2);
+				} else {
+					pos2 = IS_EMPTY;
+					break;
+				}
+			} while (drand48() > down2);
         } else {
             sam_write1(fp_out, hout, b1);
-            if (sam_itr_next(fp_in1, iter1, b1) >= 0) {
-                pos1 = ((uint64_t)b1->core.tid<<32) | (uint32_t)((uint32_t)b1->core.pos+1)<<1 | bam_is_rev(b1);
-            } else {
-                pos1 = IS_EMPTY;
-            }
+			do {
+				if (sam_itr_next(fp_in1, iter1, b1) >= 0) {
+					pos1 = ((uint64_t)b1->core.tid<<32) | (uint32_t)((uint32_t)b1->core.pos+1)<<1 | bam_is_rev(b1);
+				} else {
+					pos1 = IS_EMPTY;
+					break;
+				}
+			} while (drand48() > down1);
         }
     }
 
