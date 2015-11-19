@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
     int c, compression = 0;
     char *fn_in1 = 0, *fn_in2 = 0, *fn_bed, *fn_out = 0, *fn_hdr = 0, mode[16];
     long random_seed = (long)time(NULL);
-    float min_frac = 0.0, max_frac = 1.0, down1 = 1.0, down2 = 1.0;
+    float min_frac = 0.0, max_frac = 1.0, down1 = 1.0, down2 = 1.0, diff_frac, fraction;
     void *bed = 0;
     samFile *fp_out = 0, *fp_in1 = 0, *fp_in2 = 0;
     bam_hdr_t *hdr = 0, *hout = 0;
@@ -192,40 +192,67 @@ int main(int argc, char *argv[])
     }
     // Merge data //
     fprintf(stderr, "5\n");
+    diff_frac = max_frac - min_frac;
+    fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
     while (pos1 != IS_EMPTY || pos2 != IS_EMPTY) {
-        if (pos2 < pos1) {
+        if (drand48() > fraction) { // draw from bam2
             sam_write1(fp_out, hout, b2);
-			do {
-				if (sam_itr_next(fp_in2, iter2, b2) >= 0) {
-					pos2 = ((uint64_t)b2->core.tid<<32) | (uint32_t)((uint32_t)b2->core.pos+1)<<1 | bam_is_rev(b2);
-				} else {
-					pos2 = IS_EMPTY;
-					break;
-				}
-			} while (drand48() > down2);
-        } else {
+            // move bam1 if necessary
+            while (pos1 < pos2) {
+                do {
+                    if (sam_itr_next(fp_in1, iter1, b1) >= 0) {
+                        pos1 = ((uint64_t)b1->core.tid<<32) | (uint32_t)((uint32_t)b1->core.pos+1)<<1 | bam_is_rev(b1);
+                    } else {
+                        pos1 = IS_EMPTY;
+                        break;
+                    }
+                } while (drand48() > down1);
+            }
+            // move bam2
+            do {
+                if (sam_itr_next(fp_in2, iter2, b2) >= 0) {
+                    pos2 = ((uint64_t)b2->core.tid<<32) | (uint32_t)((uint32_t)b2->core.pos+1)<<1 | bam_is_rev(b2);
+                } else {
+                    pos2 = IS_EMPTY;
+                    break;
+                }
+            } while (drand48() > down2);
+        } else { // draw from bam1
             sam_write1(fp_out, hout, b1);
-			do {
-				if (sam_itr_next(fp_in1, iter1, b1) >= 0) {
-					pos1 = ((uint64_t)b1->core.tid<<32) | (uint32_t)((uint32_t)b1->core.pos+1)<<1 | bam_is_rev(b1);
-				} else {
-					pos1 = IS_EMPTY;
-					break;
-				}
-			} while (drand48() > down1);
+            // move bam2 if necessary
+            while (pos2 < pos1) {
+                do {
+                    if (sam_itr_next(fp_in2, iter1, b2) >= 0) {
+                        pos2 = ((uint64_t)b2->core.tid<<32) | (uint32_t)((uint32_t)b2->core.pos+1)<<1 | bam_is_rev(b2);
+                    } else {
+                        pos2 = IS_EMPTY;
+                        break;
+                    }
+                } while (drand48() > down2);
+            }
+            // move bam1
+            do {
+                if (sam_itr_next(fp_in1, iter1, b1) >= 0) {
+                    pos1 = ((uint64_t)b1->core.tid<<32) | (uint32_t)((uint32_t)b1->core.pos+1)<<1 | bam_is_rev(b1);
+                } else {
+                    pos1 = IS_EMPTY;
+                    break;
+                }
+            } while (drand48() > down1);
         }
     }
 
-    printf("min_frac is %f\n", min_frac);
-    printf("max_frac is %f\n", max_frac);
-    printf("down1 is %f\n", down1);
-    printf("down2 is %f\n", down2);
-    printf("seed is %ld\n", random_seed);
-    printf("fn1 is %s\n", fn_in1);
-    printf("fn2 is %s\n", fn_in2);
-    printf("fn_bed is %s\n", fn_bed);
-    printf("fn_hdr is %s\n", fn_hdr? fn_hdr : "not specified");
-    printf("fn_out is %s\n", fn_out? fn_out : "not specified");
+    fprintf(stderr, "fraction is %f\n", fraction);
+    fprintf(stderr, "min_frac is %f\n", min_frac);
+    fprintf(stderr, "max_frac is %f\n", max_frac);
+    fprintf(stderr, "down1 is %f\n", down1);
+    fprintf(stderr,"down2 is %f\n", down2);
+    fprintf(stderr, "seed is %ld\n", random_seed);
+    fprintf(stderr, "fn1 is %s\n", fn_in1);
+    fprintf(stderr, "fn2 is %s\n", fn_in2);
+    fprintf(stderr, "fn_bed is %s\n", fn_bed);
+    fprintf(stderr, "fn_hdr is %s\n", fn_hdr? fn_hdr : "not specified");
+    fprintf(stderr, "fn_out is %s\n", fn_out? fn_out : "not specified");
 
     free(fn_out);
     free(fn_in1);
