@@ -33,6 +33,8 @@ void usage(FILE *fp)
 "  -s VALUE     use VALUE to initalize the random seed [time]\n"
 "  -d FLOAT     downsample from <in1.bam> by this fraction [1.0]\n"
 "  -e FLOAT     downsample from <in2.bam> by this fraction [1.0]\n"
+"  -b FILE      write the fractions of reads from <in1.bam> over"
+" each region to FILE\n"
 "  -c INT       compression level for the output file [0]\n");
 }
 
@@ -56,7 +58,7 @@ inline uint64_t sam_downsample_next(samFile *fp, hts_itr_t *iter, bam1_t *b, flo
 int main(int argc, char *argv[])
 {
     int c, compression = 0;
-    char *fn_in1 = 0, *fn_in2 = 0, *fn_bed, *fn_out = 0, *fn_hdr = 0, mode[16];
+    char *fn_in1 = 0, *fn_in2 = 0, *fn_bed, *fn_out = 0, *fn_hdr = 0, mode[16], *fn_bed_out = 0;
     long random_seed = (long)time(NULL);
     float min_frac = 0.0, max_frac = 1.0, down1 = 1.0, down2 = 1.0, diff_frac, fraction = 0.0;
     void *bed = 0;
@@ -66,6 +68,7 @@ int main(int argc, char *argv[])
     hts_itr_t *iter1 = 0, *iter2 = 0;
     bam1_t *b1 = 0, *b2 = 0;
     uint64_t pos1 = 0, pos2 = 0, reg = 0, last_reg = 0;
+    FILE *fp_bed_out = 0;
 
     while ((c = getopt(argc, argv, "h:o:m:a:s:d:e:c:")) >= 0) {
         if (c == 'h') fn_hdr = strdup(optarg);
@@ -76,6 +79,7 @@ int main(int argc, char *argv[])
         else if (c == 'd') down1 = atof(optarg);
         else if (c == 'e') down2 = atof(optarg);
         else if (c == 'c') compression = atoi(optarg);
+        else if (c == 'b') fn_bed_out = strdup(optarg);
     }
     // User errors //
     if (argc - optind< 3 || argc - optind > 3) {
@@ -133,6 +137,13 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error: could not open input file %s\n", fn_in2);
         return 1;
     }
+    if (fn_bed_out) {
+        if (!(fp_bed_out = fopen(fn_bed_out, "w"))) {
+            fprintf(stderr, "Error: could not open output file %s\n", fn_bed_out);
+            return 1;
+        }
+    }
+
     fprintf(stderr, "2\n");
 
     // Read the header and write to the output file //
@@ -209,7 +220,7 @@ int main(int argc, char *argv[])
     }
     // Merge data //
     fprintf(stderr, "5\n");
-    diff_frac = max_frac - min_frac
+    diff_frac = max_frac - min_frac;
     //fraction = (float)(drand48() * diff_frac + min_frac); // fraction of reads from bam1
     while (pos1 != IS_EMPTY || pos2 != IS_EMPTY) {
         if (drand48() > fraction) { // draw from bam2
@@ -228,7 +239,9 @@ int main(int argc, char *argv[])
                     reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
                 }
                 fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
-                continue // draw again for new region
+                if (fp_bed_out)
+                    fprintf(fp_bed_out, "%s\t%" PRIu32 "\t%" PRIu32 "\t%.3f", hout->target_name[b2->core.tid], (uint32_t)(last_reg >> 32), ((uint32_t)last_reg), fraction);
+                continue; // draw again for new region
             }
             sam_write1(fp_out, hout, b2);
             // move bam1, if necessary
@@ -253,7 +266,9 @@ int main(int argc, char *argv[])
                     reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
                 }
                 fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
-                continue // draw again for new region
+                if (fp_bed_out)
+                    fprintf(fp_bed_out, "%s\t%" PRIu32 "\t%" PRIu32 "\t%.3f", hout->target_name[b1->core.tid], (uint32_t)(last_reg >> 32), ((uint32_t)last_reg), fraction);
+                continue; // draw again for new region
             }
             sam_write1(fp_out, hout, b1);
             // move bam2, if necessary
@@ -281,10 +296,12 @@ int main(int argc, char *argv[])
     free(fn_in1);
     free(fn_in2);
     free(fn_bed);
+    free(fn_bed_out);
     bed_destroy(bed);
     hts_close(fp_out);
     hts_close(fp_in1);
     hts_close(fp_in2);
+    fclose(fp_bed_out);
     bam_hdr_destroy(hout);
     hts_itr_destroy(iter1);
     hts_itr_destroy(iter2);
