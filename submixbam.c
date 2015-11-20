@@ -103,8 +103,7 @@ int main(int argc, char *argv[])
     bam_hdr_t *hdr = 0, *hout = 0;
     hts_idx_t *idx = 0;
     hts_itr_t *iter1 = 0, *iter2 = 0;
-    bam1_t *b1 = 0, *b2 = 0;
-    uint64_t pos1 = 0, pos2 = 0, reg = 0, last_reg = 1;
+    uint64_t reg = 0, last_reg = 1;
     FILE *fp_bed_out = 0;
     heap2_t h1, h2;
 
@@ -335,7 +334,7 @@ int main(int argc, char *argv[])
     bam_hdr_destroy(hout);
     hts_itr_destroy(iter1);
     hts_itr_destroy(iter2);
-    bam_destroy1(b1);
-    bam_destroy1(b2);
+    bam_destroy1(h1.b);
+    bam_destroy1(h2.b);
     return 0;
 }
