@@ -67,10 +67,10 @@ int main(int argc, char *argv[])
     hts_idx_t *idx = 0;
     hts_itr_t *iter1 = 0, *iter2 = 0;
     bam1_t *b1 = 0, *b2 = 0;
-    uint64_t pos1 = 0, pos2 = 0, reg = 0, last_reg = 0;
+    uint64_t pos1 = 0, pos2 = 0, reg = 0, last_reg = 1;
     FILE *fp_bed_out = 0;
 
-    while ((c = getopt(argc, argv, "h:o:m:a:s:d:e:c:")) >= 0) {
+    while ((c = getopt(argc, argv, "b:h:o:m:a:s:d:e:c:")) >= 0) {
         if (c == 'h') fn_hdr = strdup(optarg);
         else if (c == 'o') fn_out = strdup(optarg);
         else if (c == 'm') min_frac = atof(optarg);
@@ -113,7 +113,6 @@ int main(int argc, char *argv[])
     else if (compression > 9)
         compression = 9;
 
-    fprintf(stderr, "1\n");
     srand48(random_seed);
     fn_in1 = strdup(argv[optind]);
     fn_in2 = strdup(argv[optind + 1]);
@@ -124,7 +123,6 @@ int main(int argc, char *argv[])
     }
     // The hard way //
     mode[0] = 'w'; mode[1] = 'b'; mode[2] = compression + '0'; mode[3] = 0;
-    fprintf(stderr, "%s\n", mode);
     if (!(fp_out = sam_open(fn_out ? fn_out : "-", mode))) {
         fprintf(stderr, "Error: could not open output file %s\n", fn_out);
         return 1;
@@ -143,8 +141,6 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
-
-    fprintf(stderr, "2\n");
 
     // Read the header and write to the output file //
     hdr = bam_hdr_init();
@@ -175,8 +171,6 @@ int main(int argc, char *argv[])
         hdr = sam_hdr_read(fp_in2);
         bam_hdr_destroy(hdr);
     }
-    fprintf(stderr, "3\n");
-    fprintf(stderr, "hout has %" PRId32 " targets\n", hout->n_targets);
 
     // Initalize iterators //
     if (!(idx = sam_index_load(fp_in1, fn_in1))) {
@@ -197,29 +191,20 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    fprintf(stderr, "iter1 has tid %d\n", iter1->tid);
-    fprintf(stderr, "iter2 has tid %d\n", iter2->tid);
-
     hts_idx_destroy(idx);
-    fprintf(stderr, "4\n");
     b1 = bam_init1();
     b2 = bam_init1();
     if ((c = sam_itr_next(fp_in1, iter1, b1)) >= 0) {
         pos1 = ((uint64_t)b1->core.tid<<32) | (uint32_t)((uint32_t)b1->core.pos+1)<<1 | bam_is_rev(b1);
-        fprintf(stderr, "Read bam\n");
     } else {
-        fprintf(stderr, "Did not read bam\n");
         pos1 = IS_EMPTY;
     }
     if ((c = sam_itr_next(fp_in2, iter2, b2)) >= 0) {
         pos2 = ((uint64_t)b2->core.tid<<32) | (uint32_t)((uint32_t)b2->core.pos+1)<<1 | bam_is_rev(b2);
-        fprintf(stderr, "Read bam\n");
     } else {
         pos2 = IS_EMPTY;
-        fprintf(stderr, "Did not read bam\n");
     }
     // Merge data //
-    fprintf(stderr, "5\n");
     diff_frac = max_frac - min_frac;
     //fraction = (float)(drand48() * diff_frac + min_frac); // fraction of reads from bam1
     while (pos1 != IS_EMPTY || pos2 != IS_EMPTY) {
@@ -227,21 +212,25 @@ int main(int argc, char *argv[])
             reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
             if (reg != last_reg) {
                 // Move to a new region //
-                while (reg == UINT64_MAX) {
+                while (reg == 0) {
                     if ((pos2 = sam_downsample_next(fp_in2, iter2, b2, down2)) == IS_EMPTY) break;
                     reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
                 }
-                last_reg = reg;
-                // update bam1 //
-                reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
-                while (pos1 < pos2 && reg != last_reg) {
-                    if ((pos1 = sam_downsample_next(fp_in1, iter1, b1, down1)) == IS_EMPTY) break;
+                if (pos2 == IS_EMPTY) break;
+                // Reads of different lengths or clipping might cause reg == last_reg //
+                if (last_reg != reg) {
+                    last_reg = reg;
+                    // update bam1 //
                     reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
+                    while (pos1 < pos2 && reg != last_reg) {
+                        if ((pos1 = sam_downsample_next(fp_in1, iter1, b1, down1)) == IS_EMPTY) break;
+                        reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
+                    }
+                    fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
+                    if (fp_bed_out)
+                        fprintf(fp_bed_out, "%s\t%" PRIu32 "\t%" PRIu32 "\t%.3f\n", hout->target_name[b2->core.tid], (uint32_t)(last_reg >> 32), ((uint32_t)last_reg), fraction);
+                    continue; // draw again for new region
                 }
-                fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
-                if (fp_bed_out)
-                    fprintf(fp_bed_out, "%s\t%" PRIu32 "\t%" PRIu32 "\t%.3f", hout->target_name[b2->core.tid], (uint32_t)(last_reg >> 32), ((uint32_t)last_reg), fraction);
-                continue; // draw again for new region
             }
             sam_write1(fp_out, hout, b2);
             // move bam1, if necessary
@@ -254,21 +243,25 @@ int main(int argc, char *argv[])
             reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
             if (reg != last_reg) {
                 // Move to a new region //
-                while (reg == UINT64_MAX) {
+                while (reg == 0) {
                     if ((pos1 = sam_downsample_next(fp_in1, iter1, b1, down1)) == IS_EMPTY) break;
                     reg = bed_get_reg(bed, hout->target_name[b1->core.tid], b1->core.pos, bam_endpos(b1));
                 }
-                last_reg = reg;
-                // update bam2 //
-                reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
-                while (pos2 < pos1 && reg != last_reg) {
-                    if ((pos2 = sam_downsample_next(fp_in2, iter2, b2, down2)) == IS_EMPTY) break;
+                if (pos1 == IS_EMPTY) break;
+                // Reads of different lengths or clipping might cause reg == last_reg //
+                if (last_reg != reg) {
+                    last_reg = reg;
+                    // update bam2 //
                     reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
+                    while (pos2 < pos1 && reg != last_reg) {
+                        if ((pos2 = sam_downsample_next(fp_in2, iter2, b2, down2)) == IS_EMPTY) break;
+                        reg = bed_get_reg(bed, hout->target_name[b2->core.tid], b2->core.pos, bam_endpos(b2));
+                    }
+                    fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
+                    if (fp_bed_out)
+                        fprintf(fp_bed_out, "%s\t%" PRIu32 "\t%" PRIu32 "\t%.3f\n", hout->target_name[b1->core.tid], (uint32_t)(last_reg >> 32), ((uint32_t)last_reg), fraction);
+                    continue; // draw again for new region
                 }
-                fraction = (float)(drand48() * diff_frac + min_frac); // fraction of read from bam1
-                if (fp_bed_out)
-                    fprintf(fp_bed_out, "%s\t%" PRIu32 "\t%" PRIu32 "\t%.3f", hout->target_name[b1->core.tid], (uint32_t)(last_reg >> 32), ((uint32_t)last_reg), fraction);
-                continue; // draw again for new region
             }
             sam_write1(fp_out, hout, b1);
             // move bam2, if necessary
@@ -279,18 +272,6 @@ int main(int argc, char *argv[])
             pos1 = sam_downsample_next(fp_in1, iter1, b1, down1);
         }
     }
-
-    fprintf(stderr, "fraction is %f\n", fraction);
-    fprintf(stderr, "min_frac is %f\n", min_frac);
-    fprintf(stderr, "max_frac is %f\n", max_frac);
-    fprintf(stderr, "down1 is %f\n", down1);
-    fprintf(stderr,"down2 is %f\n", down2);
-    fprintf(stderr, "seed is %ld\n", random_seed);
-    fprintf(stderr, "fn1 is %s\n", fn_in1);
-    fprintf(stderr, "fn2 is %s\n", fn_in2);
-    fprintf(stderr, "fn_bed is %s\n", fn_bed);
-    fprintf(stderr, "fn_hdr is %s\n", fn_hdr? fn_hdr : "not specified");
-    fprintf(stderr, "fn_out is %s\n", fn_out? fn_out : "not specified");
 
     free(fn_out);
     free(fn_in1);
