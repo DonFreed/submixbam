@@ -127,34 +127,34 @@ int bed_overlap(const void *_h, const char *chr, int beg, int end)
 
 uint64_t bed_get_core(const bed_reglist_t *p, int beg, int end)
 {
-	int i, min_off;
-	if (p->n == 0) return 0;
-	min_off = (beg>>LIDX_SHIFT >= p->n)? p->idx[p->n-1] : p->idx[beg>>LIDX_SHIFT];
-	if (min_off < 0) {
-		int n = beg>>LIDX_SHIFT;
-		if (n > p->n) n = p->n;
-		for (i = n - 1; i >= 0; --i)
-			if (p->idx[i] >= 0) break;
-		min_off = i >= 0? p->idx[i] : 0;
-	}
-	for (i = min_off; i < p->n; ++i) {
-		if ((int)(p->a[i]>>32) >= end) break;
-		if ((int32_t)p->a[i] > beg && (int32_t)(p->a[i]>>32) < end)
-			return p->a[i];
-	}
-	return 0;
+    int i, min_off;
+    if (p->n == 0) return 0;
+    min_off = (beg>>LIDX_SHIFT >= p->n)? p->idx[p->n-1] : p->idx[beg>>LIDX_SHIFT];
+    if (min_off < 0) {
+        int n = beg>>LIDX_SHIFT;
+        if (n > p->n) n = p->n;
+        for (i = n - 1; i >= 0; --i)
+            if (p->idx[i] >= 0) break;
+        min_off = i >= 0? p->idx[i] : 0;
+    }
+    for (i = min_off; i < p->n; ++i) {
+        if ((int)(p->a[i]>>32) >= end) break;
+        if ((int32_t)p->a[i] > beg && (int32_t)(p->a[i]>>32) < end)
+            return p->a[i];
+    }
+    return 0;
 }
 
 
 // The same as bed_overlap, only return the region
 uint64_t bed_get_reg(const void *_h, const char *chr, int beg, int end)
 {
-	const reghash_t *h = (const reghash_t*)_h;
-	khint_t k;
-	if (!h) return 0;
-	k = kh_get(reg, h, chr);
-	if (k == kh_end(h)) return 0;
-	return bed_get_core(&kh_val(h, k), beg, end);
+    const reghash_t *h = (const reghash_t*)_h;
+    khint_t k;
+    if (!h) return 0;
+    k = kh_get(reg, h, chr);
+    if (k == kh_end(h)) return 0;
+    return bed_get_core(&kh_val(h, k), beg, end);
 }
 
 /* "BED" file reader, which actually reads two different formats.
