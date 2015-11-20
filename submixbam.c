@@ -161,6 +161,7 @@ int main(int argc, char *argv[])
         bam_hdr_destroy(hdr);
         hdr = sam_hdr_read(fp_in2);
         bam_hdr_destroy(hdr);
+        hts_close(fp_hdr);
     } else {
         hout = sam_hdr_read(fp_in1);
         if (sam_hdr_write(fp_out, hout)) {
@@ -273,6 +274,7 @@ int main(int argc, char *argv[])
         }
     }
 
+    free(fn_hdr);
     free(fn_out);
     free(fn_in1);
     free(fn_in2);
