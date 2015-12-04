@@ -1,6 +1,6 @@
 CC       = gcc
 CPPFLAGS = 
-CFLAGS   = -g -Wall #-O2
+CFLAGS   = -g -Wall -O2
 LDFLAGS  =
 LIBS     =
 
@@ -21,3 +21,6 @@ submixbam: submixbam.o bedidx.o $(HTSLIB)
 
 submixbam.o: submixbam.c
 bedidx.o: bedidx.c $(HTSDIR)/htslib/ksort.h $(HTSDIR)/htslib/kseq.h $(HTSDIR)/htslib/khash.h
+
+clean:
+	-rm -f *.o submixbam

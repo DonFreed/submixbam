@@ -74,7 +74,7 @@ void usage(FILE *fp)
 /*
  * Read a sam/bam file with downsampling
  */
-inline void sam_downsample_next(samFile *fp, hts_itr_t *iter, heap2_t *h, float down)
+inline void sam_downsample_next(samFile *fp, hts_itr_t *iter, heap2_t *h, float down, uint32_t max_tid)
 {
     do {
         if (sam_itr_next(fp, iter, h->b) >= 0) {
@@ -90,6 +90,10 @@ inline void sam_downsample_next(samFile *fp, hts_itr_t *iter, heap2_t *h, float 
             return;
         }
     } while (drand48() > down);
+    if (h->b->core.tid >= max_tid) { // Unaligned reads
+        h->pos = IS_EMPTY;
+        return;
+    }
 }
 
 int main(int argc, char *argv[])
@@ -252,7 +256,7 @@ int main(int argc, char *argv[])
             if (reg != last_reg) {
                 // Move to a new region //
                 while (reg == 0) {
-                    sam_downsample_next(fp_in2, iter2, &h2, down2);
+                    sam_downsample_next(fp_in2, iter2, &h2, down2, hout->n_targets);
                     if (h2.pos == IS_EMPTY)
                         break;
                     reg = bed_get_reg(bed, hout->target_name[h2.b->core.tid], h2.b->core.pos, bam_endpos(h2.b));
@@ -264,8 +268,8 @@ int main(int argc, char *argv[])
                     // update bam1 //
                     reg = bed_get_reg(bed, hout->target_name[h1.b->core.tid], h1.b->core.pos, bam_endpos(h1.b));
                     while (heap2_lt(h1, h2) && reg != last_reg) {
-                        sam_downsample_next(fp_in1, iter1, &h1, down1);
-                           if (h1.pos == IS_EMPTY)
+                        sam_downsample_next(fp_in1, iter1, &h1, down1, hout->n_targets);
+                        if (h1.pos == IS_EMPTY)
                             break;
                         reg = bed_get_reg(bed, hout->target_name[h1.b->core.tid], h1.b->core.pos, bam_endpos(h1.b));
                     }
@@ -278,17 +282,17 @@ int main(int argc, char *argv[])
             sam_write1(fp_out, hout, h2.b);
             // move bam1, if necessary
             while (heap2_lt(h1, h2)) {
-                sam_downsample_next(fp_in1, iter1, &h1, down1);
+                sam_downsample_next(fp_in1, iter1, &h1, down1, hout->n_targets);
             }
             // move bam2
-            sam_downsample_next(fp_in2, iter2, &h2, down2);
+            sam_downsample_next(fp_in2, iter2, &h2, down2, hout->n_targets);
         } else { // draw from bam1
             reg = bed_get_reg(bed, hout->target_name[h1.b->core.tid], h1.b->core.pos, bam_endpos(h1.b));
             if (reg != last_reg) {
                 // Move to a new region //
                 while (reg == 0) {
-                    sam_downsample_next(fp_in1, iter1, &h1, down1);
-                       if (h1.pos == IS_EMPTY)
+                    sam_downsample_next(fp_in1, iter1, &h1, down1, hout->n_targets);
+                    if (h1.pos == IS_EMPTY)
                         break;
                     reg = bed_get_reg(bed, hout->target_name[h1.b->core.tid], h1.b->core.pos, bam_endpos(h1.b));
                 }
@@ -299,7 +303,7 @@ int main(int argc, char *argv[])
                     // update bam2 //
                     reg = bed_get_reg(bed, hout->target_name[h2.b->core.tid], h2.b->core.pos, bam_endpos(h2.b));
                     while (heap2_lt(h2, h1) && reg != last_reg) {
-                        sam_downsample_next(fp_in2, iter2, &h2, down2);
+                        sam_downsample_next(fp_in2, iter2, &h2, down2, hout->n_targets);
                         if (h2.pos == IS_EMPTY)
                             break;
                         reg = bed_get_reg(bed, hout->target_name[h2.b->core.tid], h2.b->core.pos, bam_endpos(h2.b));
@@ -313,10 +317,10 @@ int main(int argc, char *argv[])
             sam_write1(fp_out, hout, h1.b);
             // move bam2, if necessary
             while (heap2_lt(h2, h1)) {
-                sam_downsample_next(fp_in2, iter2, &h2, down2);
+                sam_downsample_next(fp_in2, iter2, &h2, down2, hout->n_targets);
             }
             // move bam1
-            sam_downsample_next(fp_in1, iter1, &h1, down1);
+            sam_downsample_next(fp_in1, iter1, &h1, down1, hout->n_targets);
         }
     }
 
