@@ -56,7 +56,7 @@ void usage(FILE *fp)
 "submixbam\n"
 "  Randomly subset from and merge sequence reads from two bam files over regions\n"
 "\n"
-"Usage: subsetbam [options] [-h inh.sam] <in1.bam> <in2.bam> <in.bed>\n"
+"Usage: submixbam [options] [-h inh.sam] <in1.bam> <in2.bam> <in.bed>\n"
 "\n"
 "Options:\n"
 "  -h FILE      copy the header in FILE to the output [in1.bam]\n"
