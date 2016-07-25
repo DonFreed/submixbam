@@ -27,5 +27,5 @@ Options:
 
 ### Examples
 
-See platinum_200x_example.sh for an example of using submixbam on 200x data from the Illumina Platinum Genomes. 
+See `platinum_200x_example.sh` for an example of using submixbam on 200x data from the Illumina Platinum Genomes. 
 
